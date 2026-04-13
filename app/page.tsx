@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useState, useRef, useCallback } from "react";
 
 const TOKEN_COLORS = [
   "bg-indigo-500", "bg-purple-500", "bg-pink-500",
@@ -21,52 +21,79 @@ export default function Home() {
   const [tokens, setTokens] = useState<TokenWithId[]>([]);
   const [attention, setAttention] = useState<number[][]>([]);
   const [isProcessing, setIsProcessing] = useState<boolean>(false);
-  const workerRef = useRef<Worker | null>(null);
+  const [modelReady, setModelReady] = useState<boolean>(false);
 
+  // Use useRef to persist model instances across renders
+  const tokenizerRef = useRef<any>(null);
+  const modelRef = useRef<any>(null);
+
+  // Load model on mount via dynamic import
   useEffect(() => {
-    workerRef.current = new Worker(new URL("../lib/worker.js", import.meta.url));
+    async function loadModels() {
+      try {
+        const { AutoTokenizer, AutoModel } = await import("@xenova/transformers");
 
-    workerRef.current.onmessage = (event) => {
-      const { type, status: workerStatus, error, tokens: resultTokens, attention: attentionMatrix } = event.data;
+        const [t, m] = await Promise.all([
+          AutoTokenizer.from_pretrained("Xenova/distilgpt2"),
+          AutoModel.from_pretrained("Xenova/distilgpt2")
+        ]);
 
-      if (type === "loading") {
-        setStatus(workerStatus);
-      } else if (type === "ready") {
-        setStatus(workerStatus);
-      } else if (type === "result") {
-        // Add color to each token
-        const colored = resultTokens.map((t: TokenWithId, i: number) => ({
-          ...t,
-          color: TOKEN_COLORS[i % TOKEN_COLORS.length]
-        }));
-        setTokens(colored);
-        setAttention(attentionMatrix);
-        setIsProcessing(false);
-      } else if (type === "error") {
-        setStatus(`Error: ${error}`);
-        setIsProcessing(false);
+        tokenizerRef.current = t;
+        modelRef.current = m;
+        setModelReady(true);
+        setStatus("Model Ready!");
+      } catch (error: any) {
+        setStatus(`Error loading model: ${error.message}`);
       }
-    };
-
-    workerRef.current.postMessage({ type: "init" });
-
-    return () => {
-      workerRef.current?.terminate();
-    };
+    }
+    loadModels();
   }, []);
 
-  const handleTeardown = () => {
-    if (!workerRef.current || isProcessing) return;
+  const handleTeardown = useCallback(async () => {
+    if (!tokenizerRef.current || !modelRef.current || !inputText.trim() || isProcessing) return;
 
     setIsProcessing(true);
     setTokens([]);
     setAttention([]);
 
-    workerRef.current.postMessage({
-      type: "teardown",
-      payload: { text: inputText }
-    });
-  };
+    try {
+      const { Tensor } = await import("@xenova/transformers");
+
+      // --- TOKENIZATION ---
+      const wordChunks = tokenizerRef.current.tokenize(inputText);
+      const ids = tokenizerRef.current.encode(inputText);
+
+      const tokenData = wordChunks.map((word: string, index: number) => ({
+        token: word.replace(/Ġ/g, " "),
+        id: ids[index],
+        color: TOKEN_COLORS[index % TOKEN_COLORS.length]
+      }));
+      setTokens(tokenData);
+
+      // --- ATTENTION EXTRACTION ---
+      const inputIdsTensor = new Tensor(
+        'int64',
+        BigInt64Array.from(ids.map(BigInt)),
+        [1, ids.length]
+      );
+
+      const output = await modelRef.current({
+        input_ids: inputIdsTensor,
+        output_attentions: true
+      });
+
+      // Extract Layer 0, Head 0 from [batch, layers, heads, seq_len, seq_len]
+      const layerZero = output.attentions[0];
+      const headZero = layerZero[0][0];
+      const matrix = headZero.toArray() as number[][];
+
+      setAttention(matrix);
+    } catch (error: any) {
+      setStatus(`Analysis failed: ${error.message}`);
+    } finally {
+      setIsProcessing(false);
+    }
+  }, [inputText, isProcessing]);
 
   return (
     <main className="min-h-screen bg-gray-950 text-white flex flex-col items-center p-8 font-sans">
@@ -88,7 +115,7 @@ export default function Home() {
         />
         <button
           onClick={handleTeardown}
-          disabled={isProcessing || status !== "Model Ready!"}
+          disabled={!modelReady || isProcessing}
           className="mt-4 w-full py-3 bg-indigo-600 hover:bg-indigo-500 disabled:bg-gray-700 disabled:text-gray-400 rounded-lg font-semibold transition-colors"
         >
           {isProcessing ? "Analyzing..." : "Teardown"}
@@ -166,7 +193,6 @@ export default function Home() {
                 {attention.map((row, i) => (
                   <div key={i} className="flex gap-1">
                     {row.map((score, j) => {
-                      // Boost intensity for visibility (raw scores are often small)
                       const intensity = Math.min(score * 2.5, 1);
                       return (
                         <div

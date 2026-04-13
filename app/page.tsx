@@ -2,13 +2,19 @@
 
 import { useEffect, useState, useRef } from "react";
 
+const TOKEN_COLORS = [
+  "bg-indigo-500", "bg-purple-500", "bg-pink-500",
+  "bg-blue-500", "bg-cyan-500", "bg-teal-500", "bg-emerald-500"
+];
+
 interface TokenWithId {
   token: string;
   id: number;
+  color: string;
 }
 
 export default function Home() {
-  const [status, setStatus] = useState<string>("Downloading AI Model to Browser...");
+  const [status, setStatus] = useState<string>("Downloading AI Model to Browser (One time only)...");
   const [inputText, setInputText] = useState<string>(
     "The bank of the river was muddy, but the bank closed at 5 PM."
   );
@@ -28,7 +34,12 @@ export default function Home() {
       } else if (type === "ready") {
         setStatus(workerStatus);
       } else if (type === "result") {
-        setTokens(resultTokens);
+        // Add color to each token
+        const colored = resultTokens.map((t: TokenWithId, i: number) => ({
+          ...t,
+          color: TOKEN_COLORS[i % TOKEN_COLORS.length]
+        }));
+        setTokens(colored);
         setAttention(attentionMatrix);
         setIsProcessing(false);
       } else if (type === "error") {
@@ -57,135 +68,122 @@ export default function Home() {
     });
   };
 
-  const getAttentionColor = (score: number) => {
-    // Map attention score to indigo-500 with varying opacity
-    const opacity = Math.min(1, Math.max(0, score));
-    return `rgba(99, 102, 241, ${opacity})`;
-  };
-
   return (
-    <div className="min-h-screen bg-gray-950 text-white font-sans">
-      <div className="max-w-5xl mx-auto px-8 py-12">
-        {/* Header */}
-        <div className="text-center mb-12">
-          <h1 className="text-4xl font-bold mb-2 bg-gradient-to-r from-indigo-400 to-purple-400 bg-clip-text text-transparent">
-            AI Under the Hood
-          </h1>
-          <p className="text-gray-400">
-            Visualizing how Large Language Models process text
-          </p>
-          <p className="text-sm text-gray-500 mt-2">{status}</p>
-        </div>
+    <main className="min-h-screen bg-gray-950 text-white flex flex-col items-center p-8 font-sans">
+      <h1 className="text-4xl font-bold mb-2 bg-gradient-to-r from-indigo-400 to-purple-400 bg-clip-text text-transparent">
+        AI Under the Hood
+      </h1>
+      <p className="text-gray-400 mb-2">Stop memorizing AI. Start playing with it.</p>
+      <p className="text-sm text-gray-500 mb-10">{status}</p>
 
-        {/* Input Section */}
-        <div className="mb-8">
-          <label className="block text-sm font-medium text-gray-300 mb-2">
-            Enter a sentence (max ~30 words)
-          </label>
-          <textarea
-            value={inputText}
-            onChange={(e) => setInputText(e.target.value)}
-            className="w-full h-32 px-4 py-3 bg-gray-900 border border-gray-700 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent resize-none"
-            placeholder="Type a sentence to analyze..."
-            maxLength={200}
-          />
-          <button
-            onClick={handleTeardown}
-            disabled={isProcessing || status !== "Model Ready!"}
-            className="mt-4 px-6 py-3 bg-indigo-600 hover:bg-indigo-700 disabled:bg-gray-700 disabled:cursor-not-allowed text-white font-medium rounded-lg transition-colors"
-          >
-            {isProcessing ? "Processing..." : "Teardown"}
-          </button>
-        </div>
+      {/* INPUT SECTION */}
+      <div className="w-full max-w-2xl mb-12">
+        <textarea
+          className="w-full p-4 bg-gray-800 rounded-lg border border-gray-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 text-lg resize-none"
+          rows={3}
+          value={inputText}
+          onChange={(e) => setInputText(e.target.value)}
+          placeholder="Type a sentence to dissect..."
+          maxLength={200}
+        />
+        <button
+          onClick={handleTeardown}
+          disabled={isProcessing || status !== "Model Ready!"}
+          className="mt-4 w-full py-3 bg-indigo-600 hover:bg-indigo-500 disabled:bg-gray-700 disabled:text-gray-400 rounded-lg font-semibold transition-colors"
+        >
+          {isProcessing ? "Analyzing..." : "Teardown"}
+        </button>
+      </div>
 
-        {/* Module 1: Tokenizer UI */}
-        {tokens.length > 0 && (
-          <div className="mb-12">
-            <div className="mb-4">
-              <h2 className="text-xl font-semibold text-indigo-400 mb-1">
-                Module 1: Tokenization
-              </h2>
-              <p className="text-sm text-gray-400">
-                The input text is split into tokens. GPT-2 uses byte-pair encoding.
-                Spaces are represented as "Ġ" internally (shown as regular spaces below).
-              </p>
+      {/* MODULE 1: TOKENIZER */}
+      <div className="w-full max-w-4xl mb-16">
+        <div className="flex items-center gap-2 mb-2">
+          <h2 className="text-xl font-semibold">Step 1: Tokenization</h2>
+          <span className="text-xs bg-gray-800 text-gray-300 px-2 py-1 rounded-full">The Dictionary</span>
+        </div>
+        <p className="text-sm text-gray-400 mb-6">
+          AI doesn&apos;t read letters. It chops text into chunks and assigns each a unique ID number.
+        </p>
+
+        <div className="flex flex-wrap gap-3 min-h-[80px] p-4 bg-gray-900 rounded-xl border border-gray-800">
+          {tokens.length === 0 && (
+            <span className="text-gray-600 italic">Your exploded tokens will appear here...</span>
+          )}
+          {tokens.map((t, index) => (
+            <div
+              key={index}
+              className={`flex flex-col items-center p-3 rounded-lg ${t.color} shadow-lg transition-transform hover:scale-105`}
+            >
+              <span className="text-white font-mono font-bold text-lg">{t.token}</span>
+              <span className="text-xs bg-black/30 rounded px-2 py-0.5 mt-1 text-gray-200 font-mono">ID: {t.id}</span>
             </div>
-            <div className="flex flex-wrap gap-2">
-              {tokens.map((token, index) => (
-                <div
-                  key={index}
-                  className="px-4 py-2 bg-gray-900 border border-gray-700 rounded-full"
-                >
-                  <div className="text-white font-medium">{token.token}</div>
-                  <div className="text-xs text-gray-500 mt-1">ID: {token.id}</div>
-                </div>
-              ))}
-            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* MODULE 2: ATTENTION HEATMAP */}
+      <div className="w-full max-w-5xl">
+        <div className="flex items-center gap-2 mb-2">
+          <h2 className="text-xl font-semibold">Step 2: Self-Attention</h2>
+          <span className="text-xs bg-gray-800 text-gray-300 px-2 py-1 rounded-full">Layer 0, Head 0</span>
+        </div>
+        <p className="text-sm text-gray-400 mb-6">
+          How does the AI know what words relate? It assigns &quot;attention scores&quot;. Bright colors mean the word on the left is paying close attention to the word on the top.
+        </p>
+
+        {attention.length === 0 ? (
+          <div className="p-10 bg-gray-900 rounded-xl border border-gray-800 text-center text-gray-600 italic">
+            Run the teardown to generate the heatmap...
           </div>
-        )}
-
-        {/* Module 2: Attention Heatmap */}
-        {attention.length > 0 && (
-          <div>
-            <div className="mb-4">
-              <h2 className="text-xl font-semibold text-purple-400 mb-1">
-                Module 2: Self-Attention (Layer 0, Head 0)
-              </h2>
-              <p className="text-sm text-gray-400">
-                Each cell shows how much the token on the left attends to the token on top.
-                Brighter indigo = stronger attention connection.
-              </p>
-            </div>
-            <div className="overflow-x-auto">
-              <div
-                className="inline-grid gap-px bg-gray-800 p-px rounded-lg"
-                style={{
-                  gridTemplateColumns: `auto repeat(${attention.length}, minmax(3rem, 1fr))`
-                }}
-              >
-                {/* Empty corner */}
-                <div className="p-2 bg-gray-900"></div>
-
-                {/* Top axis labels (tokens) */}
-                {tokens.map((token, index) => (
-                  <div
-                    key={`top-${index}`}
-                    className="p-2 text-xs text-gray-400 font-medium whitespace-nowrap rotate-0"
-                    style={{ writingMode: 'vertical-rl', textOrientation: 'mixed' }}
-                  >
-                    {token.token}
+        ) : (
+          <div className="overflow-x-auto p-6 bg-gray-900 rounded-xl border border-gray-800">
+            <div className="flex gap-1 min-w-[500px]">
+              {/* Y-Axis Labels */}
+              <div className="flex flex-col gap-1 mr-2">
+                <div className="h-8"></div>
+                {tokens.map((t, i) => (
+                  <div key={i} className="h-8 w-24 flex items-center justify-end text-xs text-gray-400 pr-2 font-mono truncate">
+                    {t.token}
                   </div>
                 ))}
+              </div>
 
-                {/* Rows */}
-                {attention.map((row, rowIndex) => (
-                  <>
-                    {/* Left axis label (token) */}
+              {/* The Grid */}
+              <div className="flex flex-col gap-1 flex-1">
+                {/* X-Axis Labels (rotated) */}
+                <div className="flex gap-1 mb-1">
+                  {tokens.map((t, i) => (
                     <div
-                      key={`left-${rowIndex}`}
-                      className="p-2 text-xs text-gray-400 font-medium whitespace-nowrap text-right"
+                      key={i}
+                      className="w-8 h-8 flex items-center justify-center text-[10px] text-gray-400 font-mono origin-top-left rotate-45 translate-x-2"
                     >
-                      {tokens[rowIndex]?.token}
+                      {t.token}
                     </div>
+                  ))}
+                </div>
 
-                    {/* Attention cells */}
-                    {row.map((score, colIndex) => (
-                      <div
-                        key={`cell-${rowIndex}-${colIndex}`}
-                        className="w-12 h-12 sm:w-14 sm:h-14 transition-all"
-                        style={{
-                          backgroundColor: getAttentionColor(score)
-                        }}
-                        title={`${tokens[rowIndex]?.token} → ${tokens[colIndex]?.token}: ${score.toFixed(4)}`}
-                      ></div>
-                    ))}
-                  </>
+                {/* Heatmap Cells */}
+                {attention.map((row, i) => (
+                  <div key={i} className="flex gap-1">
+                    {row.map((score, j) => {
+                      // Boost intensity for visibility (raw scores are often small)
+                      const intensity = Math.min(score * 2.5, 1);
+                      return (
+                        <div
+                          key={j}
+                          className="w-8 h-8 rounded-sm transition-colors"
+                          style={{ backgroundColor: `rgba(99, 102, 241, ${intensity})` }}
+                          title={`${tokens[i]?.token} → ${tokens[j]?.token}: ${score.toFixed(4)}`}
+                        />
+                      );
+                    })}
+                  </div>
                 ))}
               </div>
             </div>
           </div>
         )}
       </div>
-    </div>
+    </main>
   );
 }
